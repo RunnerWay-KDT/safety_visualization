@@ -1,0 +1,796 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <title>🛡️ 역삼역 산책경로 안전점수 시각화</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        font-family: "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
+        background: #f4f6f8;
+      }
+
+      /* ── 레이아웃 ── */
+      #header {
+        background: linear-gradient(135deg, #1a237e, #283593);
+        color: #fff;
+        padding: 16px 24px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      #header h1 {
+        font-size: 20px;
+      }
+      #header .badge {
+        font-size: 28px;
+        font-weight: bold;
+        background: rgba(255, 255, 255, 0.15);
+        border-radius: 12px;
+        padding: 6px 18px;
+      }
+
+      #main {
+        display: flex;
+        height: calc(100vh - 60px);
+      }
+      #sidebar {
+        width: 380px;
+        overflow-y: auto;
+        padding: 16px;
+        background: #fff;
+        border-right: 1px solid #e0e0e0;
+      }
+      #map-wrap {
+        flex: 1;
+        position: relative;
+      }
+      #map {
+        width: 100%;
+        height: 100%;
+      }
+
+      /* ── 카드 ── */
+      .card {
+        background: #fff;
+        border: 1px solid #e8e8e8;
+        border-radius: 10px;
+        padding: 16px;
+        margin-bottom: 14px;
+        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+      }
+      .card h3 {
+        font-size: 14px;
+        color: #555;
+        margin-bottom: 10px;
+        border-bottom: 1px solid #eee;
+        padding-bottom: 6px;
+      }
+      .card .row {
+        display: flex;
+        justify-content: space-between;
+        margin: 6px 0;
+        font-size: 13px;
+      }
+      .card .label {
+        color: #888;
+      }
+      .card .value {
+        font-weight: bold;
+        color: #333;
+      }
+
+      /* 점수 게이지 */
+      .gauge-wrap {
+        text-align: center;
+        margin: 10px 0;
+      }
+      .gauge-bar {
+        width: 100%;
+        height: 26px;
+        background: #eee;
+        border-radius: 13px;
+        overflow: hidden;
+        position: relative;
+      }
+      .gauge-fill {
+        height: 100%;
+        border-radius: 13px;
+        transition: width 1.5s ease;
+      }
+      .gauge-text {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        font-weight: bold;
+        color: #333;
+        font-size: 13px;
+      }
+
+      /* 범례 */
+      .legend-item {
+        display: flex;
+        align-items: center;
+        margin: 4px 0;
+        font-size: 12px;
+      }
+      .legend-dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        margin-right: 8px;
+        flex-shrink: 0;
+      }
+      .legend-line {
+        width: 24px;
+        height: 4px;
+        border-radius: 2px;
+        margin-right: 8px;
+        flex-shrink: 0;
+      }
+
+      /* 수식 */
+      .formula {
+        background: #f8f9fa;
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        padding: 12px;
+        font-family: "Consolas", monospace;
+        font-size: 12px;
+        line-height: 1.8;
+        color: #333;
+      }
+      .formula .highlight {
+        color: #d32f2f;
+        font-weight: bold;
+      }
+      .formula .blue {
+        color: #1565c0;
+        font-weight: bold;
+      }
+      .formula .green {
+        color: #2e7d32;
+        font-weight: bold;
+      }
+
+      /* 토글 레이어 */
+      #layer-controls {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        background: white;
+        padding: 12px;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+        z-index: 5;
+        font-size: 13px;
+      }
+      #layer-controls label {
+        display: block;
+        margin: 4px 0;
+        cursor: pointer;
+      }
+      #layer-controls input {
+        margin-right: 6px;
+      }
+
+      /* 로딩 */
+      #loading {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(255, 255, 255, 0.92);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 999;
+        font-size: 20px;
+        color: #333;
+      }
+      .hidden {
+        display: none !important;
+      }
+
+      /* 프로세스 단계 */
+      .step {
+        margin-bottom: 6px;
+      }
+      .step-num {
+        display: inline-block;
+        width: 22px;
+        height: 22px;
+        background: #1a237e;
+        color: #fff;
+        border-radius: 50%;
+        text-align: center;
+        line-height: 22px;
+        font-size: 11px;
+        margin-right: 6px;
+      }
+      .step-label {
+        font-size: 13px;
+        color: #444;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="loading">📊 데이터를 불러오는 중...</div>
+
+    <div id="header">
+      <h1>🛡️ 역삼역 산책경로 안전점수 분석</h1>
+      <div class="badge" id="score-badge">-- 점</div>
+    </div>
+
+    <div id="main">
+      <!-- ─── 사이드바 ─── -->
+      <div id="sidebar">
+        <!-- 종합 점수 -->
+        <div class="card">
+          <h3>📊 종합 안전 점수</h3>
+          <div class="gauge-wrap">
+            <div class="gauge-bar">
+              <div class="gauge-fill" id="gauge-fill" style="width: 0%"></div>
+              <div class="gauge-text" id="gauge-text">0점</div>
+            </div>
+          </div>
+          <div class="row">
+            <span class="label">경로 길이</span
+            ><span class="value" id="v-route-len">-</span>
+          </div>
+          <div class="row">
+            <span class="label">CCTV (회랑 내)</span
+            ><span class="value" id="v-cctv">-</span>
+          </div>
+          <div class="row">
+            <span class="label">보안등 (회랑 내)</span
+            ><span class="value" id="v-lamp">-</span>
+          </div>
+        </div>
+
+        <!-- 점수 산출 과정 -->
+        <div class="card">
+          <h3>🔬 점수 산출 과정</h3>
+          <div class="step">
+            <span class="step-num">1</span
+            ><span class="step-label"
+              >경로를 <b id="v-step-m">-</b>m 간격으로 샘플링</span
+            >
+          </div>
+          <div class="step">
+            <span class="step-num">2</span
+            ><span class="step-label"
+              >CCTV 반경 <b id="v-cctv-r">-</b>m / 보안등 반경
+              <b id="v-lamp-r">-</b>m 회랑 생성</span
+            >
+          </div>
+          <div class="step">
+            <span class="step-num">3</span
+            ><span class="step-label"
+              >회랑 내 인프라 개수로 <b>밀도 점수</b> 계산</span
+            >
+          </div>
+          <div class="step">
+            <span class="step-num">4</span
+            ><span class="step-label"
+              >샘플 포인트 커버 여부로 <b>커버리지 점수</b> 계산</span
+            >
+          </div>
+          <div class="step">
+            <span class="step-num">5</span
+            ><span class="step-label"
+              >커버 안 되는 최대 구간 → <b>공백 페널티</b></span
+            >
+          </div>
+          <div class="step">
+            <span class="step-num">6</span
+            ><span class="step-label">가중합으로 최종 점수 산출</span>
+          </div>
+        </div>
+
+        <!-- 수식 -->
+        <div class="card">
+          <h3>📐 산출 수식</h3>
+          <div class="formula">
+            density = 1 − exp(−count /
+            <span class="blue" id="f-k">k</span>)<br />
+            <br />
+            <span class="highlight">raw</span> =
+            <span class="blue" id="f-wd">w_d</span> × density +
+            <span class="blue" id="f-wc">w_c</span> × coverage −
+            <span class="blue" id="f-wg">w_g</span> × gap_penalty<br />
+            <br />
+            gap_penalty = min(max_gap / <span class="blue" id="f-G">G</span>,
+            1)<br />
+            <br />
+            <span class="highlight">score</span> = clamp(raw /
+            <span class="blue" id="f-rm">rescale</span>, 0, 1) × 100
+          </div>
+        </div>
+
+        <!-- 세부 점수 -->
+        <div class="card">
+          <h3>📈 세부 지표</h3>
+          <div class="row">
+            <span class="label">밀도 점수 (density)</span
+            ><span class="value" id="v-density">-</span>
+          </div>
+          <div class="row">
+            <span class="label">커버리지 (coverage)</span
+            ><span class="value" id="v-coverage">-</span>
+          </div>
+          <div class="row">
+            <span class="label">최대 공백 (max_gap)</span
+            ><span class="value" id="v-gap">-</span>
+          </div>
+          <div class="row">
+            <span class="label">공백 페널티</span
+            ><span class="value" id="v-gap-pen">-</span>
+          </div>
+          <div
+            class="row"
+            style="
+              border-top: 1px solid #eee;
+              padding-top: 6px;
+              margin-top: 6px;
+            "
+          >
+            <span class="label">raw (가중합)</span
+            ><span class="value" id="v-raw">-</span>
+          </div>
+        </div>
+
+        <!-- 가중치 -->
+        <div class="card">
+          <h3>⚖️ 가중치 구성</h3>
+          <div class="row">
+            <span class="label">w_density</span
+            ><span class="value" id="v-wd">-</span>
+          </div>
+          <div class="row">
+            <span class="label">w_coverage</span
+            ><span class="value" id="v-wc">-</span>
+          </div>
+          <div class="row">
+            <span class="label">w_gap</span
+            ><span class="value" id="v-wg">-</span>
+          </div>
+          <div class="row">
+            <span class="label">rescale_max</span
+            ><span class="value" id="v-rm">-</span>
+          </div>
+        </div>
+
+        <!-- 범례 -->
+        <div class="card">
+          <h3>🗺️ 지도 범례</h3>
+          <div class="legend-item">
+            <div class="legend-line" style="background: #1565c0"></div>
+            산책 경로
+          </div>
+          <div class="legend-item">
+            <div class="legend-dot" style="background: #4caf50"></div>
+            샘플 포인트 (커버됨)
+          </div>
+          <div class="legend-item">
+            <div class="legend-dot" style="background: #f44336"></div>
+            샘플 포인트 (미커버)
+          </div>
+          <div class="legend-item">
+            <div
+              class="legend-dot"
+              style="background: #ff9800; border: 2px solid #e65100"
+            ></div>
+            CCTV 위치
+          </div>
+          <div class="legend-item">
+            <div
+              class="legend-dot"
+              style="background: #fdd835; border: 2px solid #f9a825"
+            ></div>
+            보안등 위치
+          </div>
+          <div class="legend-item">
+            <div
+              class="legend-line"
+              style="
+                background: rgba(255, 152, 0, 0.15);
+                border: 1px dashed #ff9800;
+              "
+            ></div>
+            CCTV 회랑 (50m)
+          </div>
+          <div class="legend-item">
+            <div
+              class="legend-line"
+              style="
+                background: rgba(253, 216, 53, 0.15);
+                border: 1px dashed #fdd835;
+              "
+            ></div>
+            보안등 회랑 (15m)
+          </div>
+        </div>
+      </div>
+
+      <!-- ─── 지도 ─── -->
+      <div id="map-wrap">
+        <div id="layer-controls">
+          <b>레이어 토글</b>
+          <label><input type="checkbox" id="chk-route" checked /> 경로</label>
+          <label
+            ><input type="checkbox" id="chk-sample" checked /> 샘플
+            포인트</label
+          >
+          <label><input type="checkbox" id="chk-cctv" checked /> CCTV</label>
+          <label><input type="checkbox" id="chk-lamp" checked /> 보안등</label>
+          <label
+            ><input type="checkbox" id="chk-corridor-cctv" checked /> CCTV
+            회랑</label
+          >
+          <label
+            ><input type="checkbox" id="chk-corridor-lamp" checked /> 보안등
+            회랑</label
+          >
+          <label><input type="checkbox" id="chk-gap" /> 최대 공백 구간</label>
+        </div>
+        <div id="map"></div>
+      </div>
+    </div>
+
+    <!-- 카카오맵 SDK — YOUR_APP_KEY 를 교체하세요 -->
+    <script
+      type="text/javascript"
+      src="//dapi.kakao.com/v2/maps/sdk.js?appkey=04bd479933893a7050c82bf667702a4b&libraries=drawing"
+    ></script>
+    <script>
+      // ──────────────────────────────────────────────────────
+      // 글로벌 변수
+      // ──────────────────────────────────────────────────────
+      let map;
+      let DATA = null;
+
+      // 레이어 그룹
+      const layers = {
+        route: [],
+        sample: [],
+        cctv: [],
+        lamp: [],
+        corridorCctv: [],
+        corridorLamp: [],
+        gap: [],
+      };
+
+      // ──────────────────────────────────────────────────────
+      // 유틸
+      // ──────────────────────────────────────────────────────
+      function scoreColor(score) {
+        if (score >= 70) return "#4caf50";
+        if (score >= 40) return "#ff9800";
+        return "#f44336";
+      }
+
+      function setVis(arr, visible) {
+        arr.forEach((o) => o.setMap(visible ? map : null));
+      }
+
+      // ──────────────────────────────────────────────────────
+      // 데이터 로드 & 렌더
+      // ──────────────────────────────────────────────────────
+      async function init() {
+        // 데이터 로드
+        const res = await fetch("safety_data.json");
+        DATA = await res.json();
+
+        // 카카오맵 초기화
+        kakao.maps.load(() => {
+          const container = document.getElementById("map");
+          map = new kakao.maps.Map(container, {
+            center: new kakao.maps.LatLng(DATA.center.lat, DATA.center.lng),
+            level: 4,
+          });
+
+          drawAll();
+          fillSidebar();
+          bindCheckboxes();
+
+          document.getElementById("loading").classList.add("hidden");
+        });
+      }
+
+      // ──────────────────────────────────────────────────────
+      // 지도에 그리기
+      // ──────────────────────────────────────────────────────
+      function drawAll() {
+        // 1) CCTV 회랑 (폴리곤)
+        if (DATA.debug.corridors && DATA.debug.corridors.cctv) {
+          const path = DATA.debug.corridors.cctv.map(
+            (c) => new kakao.maps.LatLng(c.lat, c.lng),
+          );
+          const poly = new kakao.maps.Polygon({
+            path: path,
+            strokeWeight: 1,
+            strokeColor: "#ff9800",
+            strokeOpacity: 0.5,
+            strokeStyle: "dash",
+            fillColor: "#ff9800",
+            fillOpacity: 0.08,
+          });
+          poly.setMap(map);
+          layers.corridorCctv.push(poly);
+        }
+
+        // 2) 보안등 회랑
+        if (DATA.debug.corridors && DATA.debug.corridors.lamp) {
+          const path = DATA.debug.corridors.lamp.map(
+            (c) => new kakao.maps.LatLng(c.lat, c.lng),
+          );
+          const poly = new kakao.maps.Polygon({
+            path: path,
+            strokeWeight: 1,
+            strokeColor: "#fdd835",
+            strokeOpacity: 0.6,
+            strokeStyle: "dash",
+            fillColor: "#fdd835",
+            fillOpacity: 0.1,
+          });
+          poly.setMap(map);
+          layers.corridorLamp.push(poly);
+        }
+
+        // 3) 보안등 마커
+        DATA.infra_lamp.forEach((p) => {
+          const circle = new kakao.maps.Circle({
+            center: new kakao.maps.LatLng(p.lat, p.lng),
+            radius: 3,
+            strokeWeight: 1,
+            strokeColor: "#f9a825",
+            strokeOpacity: 0.8,
+            fillColor: "#fdd835",
+            fillOpacity: 0.7,
+          });
+          circle.setMap(map);
+          layers.lamp.push(circle);
+        });
+
+        // 4) CCTV 마커
+        DATA.infra_cctv.forEach((p) => {
+          const circle = new kakao.maps.Circle({
+            center: new kakao.maps.LatLng(p.lat, p.lng),
+            radius: 4,
+            strokeWeight: 1.5,
+            strokeColor: "#e65100",
+            strokeOpacity: 0.9,
+            fillColor: "#ff9800",
+            fillOpacity: 0.8,
+          });
+          circle.setMap(map);
+          layers.cctv.push(circle);
+        });
+
+        // 5) 경로 폴리라인
+        const routePath = DATA.route.map(
+          (c) => new kakao.maps.LatLng(c.lat, c.lng),
+        );
+        const routeLine = new kakao.maps.Polyline({
+          path: routePath,
+          strokeWeight: 5,
+          strokeColor: "#1565c0",
+          strokeOpacity: 0.9,
+          strokeStyle: "solid",
+        });
+        routeLine.setMap(map);
+        layers.route.push(routeLine);
+
+        // 시작점 마커
+        const startMarker = new kakao.maps.Marker({
+          position: routePath[0],
+          map: map,
+        });
+        const startInfo = new kakao.maps.InfoWindow({
+          content:
+            '<div style="padding:5px;font-size:12px;font-weight:bold;">🚶 출발/도착</div>',
+        });
+        startInfo.open(map, startMarker);
+        layers.route.push(startMarker);
+
+        // 6) 샘플 포인트
+        if (DATA.debug.sample_points) {
+          DATA.debug.sample_points.forEach((sp, idx) => {
+            const covered = sp.covered === 1;
+            const circle = new kakao.maps.Circle({
+              center: new kakao.maps.LatLng(sp.lat, sp.lng),
+              radius: 2.5,
+              strokeWeight: 1.5,
+              strokeColor: covered ? "#2e7d32" : "#c62828",
+              strokeOpacity: 1,
+              fillColor: covered ? "#4caf50" : "#f44336",
+              fillOpacity: 0.9,
+            });
+            circle.setMap(map);
+            layers.sample.push(circle);
+          });
+
+          // 7) 최대 공백 구간 표시
+          drawMaxGap();
+        }
+      }
+
+      function drawMaxGap() {
+        if (!DATA.debug.sample_points) return;
+
+        const sp = DATA.debug.sample_points;
+        // 최대 공백 구간 찾기
+        let maxGapStart = -1,
+          maxGapEnd = -1,
+          maxLen = 0;
+        let curStart = -1,
+          curLen = 0;
+
+        for (let i = 0; i < sp.length; i++) {
+          if (sp[i].covered === 0) {
+            if (curStart < 0) curStart = i;
+            if (i > 0) {
+              const d = haversine(
+                sp[i - 1].lat,
+                sp[i - 1].lng,
+                sp[i].lat,
+                sp[i].lng,
+              );
+              curLen += d;
+            }
+          } else {
+            if (curLen > maxLen) {
+              maxLen = curLen;
+              maxGapStart = curStart;
+              maxGapEnd = i;
+            }
+            curStart = -1;
+            curLen = 0;
+          }
+        }
+        if (curLen > maxLen) {
+          maxLen = curLen;
+          maxGapStart = curStart;
+          maxGapEnd = sp.length - 1;
+        }
+
+        if (maxGapStart >= 0 && maxGapEnd > maxGapStart) {
+          const gapPath = [];
+          for (let i = maxGapStart; i <= maxGapEnd; i++) {
+            gapPath.push(new kakao.maps.LatLng(sp[i].lat, sp[i].lng));
+          }
+          if (gapPath.length > 1) {
+            const gapLine = new kakao.maps.Polyline({
+              path: gapPath,
+              strokeWeight: 8,
+              strokeColor: "#f44336",
+              strokeOpacity: 0.5,
+              strokeStyle: "shortdash",
+            });
+            // 기본 숨김 (체크해야 보임)
+            layers.gap.push(gapLine);
+          }
+        }
+      }
+
+      function haversine(lat1, lon1, lat2, lon2) {
+        const R = 6371000;
+        const dLat = ((lat2 - lat1) * Math.PI) / 180;
+        const dLon = ((lon2 - lon1) * Math.PI) / 180;
+        const a =
+          Math.sin(dLat / 2) ** 2 +
+          Math.cos((lat1 * Math.PI) / 180) *
+            Math.cos((lat2 * Math.PI) / 180) *
+            Math.sin(dLon / 2) ** 2;
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      }
+
+      // ──────────────────────────────────────────────────────
+      // 사이드바 채우기
+      // ──────────────────────────────────────────────────────
+      function fillSidebar() {
+        const f = DATA.features;
+        const p = DATA.params;
+        const score = DATA.score;
+
+        // 헤더 배지
+        document.getElementById("score-badge").textContent = score + " 점";
+        document.getElementById("score-badge").style.background =
+          scoreColor(score);
+
+        // 게이지
+        const fill = document.getElementById("gauge-fill");
+        fill.style.background = `linear-gradient(90deg, ${scoreColor(score)}, ${scoreColor(score)}dd)`;
+        setTimeout(() => {
+          fill.style.width = score + "%";
+        }, 200);
+        document.getElementById("gauge-text").textContent = score + "점";
+
+        // 기본 수치
+        document.getElementById("v-route-len").textContent =
+          f.route_len_m.toFixed(1) + " m";
+        document.getElementById("v-cctv").textContent = f.cctv_count + "대";
+        document.getElementById("v-lamp").textContent = f.lamp_count + "개";
+
+        // 파라미터
+        document.getElementById("v-step-m").textContent = p.sample_step_m;
+        document.getElementById("v-cctv-r").textContent = p.cctv_radius_m;
+        document.getElementById("v-lamp-r").textContent = p.lamp_radius_m;
+
+        // 세부 지표
+        document.getElementById("v-density").textContent =
+          f.density_score.toFixed(4);
+        document.getElementById("v-coverage").textContent =
+          (f.coverage_score * 100).toFixed(1) + "%";
+        document.getElementById("v-gap").textContent =
+          f.max_gap_m.toFixed(1) + " m";
+        document.getElementById("v-gap-pen").textContent =
+          f.gap_penalty.toFixed(4);
+
+        // raw 계산
+        const raw =
+          p.w_density * f.density_score +
+          p.w_coverage * f.coverage_score -
+          p.w_gap * f.gap_penalty;
+        document.getElementById("v-raw").textContent = raw.toFixed(4);
+
+        // 가중치
+        document.getElementById("v-wd").textContent = p.w_density;
+        document.getElementById("v-wc").textContent = p.w_coverage;
+        document.getElementById("v-wg").textContent = p.w_gap;
+        document.getElementById("v-rm").textContent = p.rescale_max;
+
+        // 수식 값
+        document.getElementById("f-k").textContent = p.density_k_per_km;
+        document.getElementById("f-wd").textContent = p.w_density;
+        document.getElementById("f-wc").textContent = p.w_coverage;
+        document.getElementById("f-wg").textContent = p.w_gap;
+        document.getElementById("f-G").textContent = p.gap_G_m + "m";
+        document.getElementById("f-rm").textContent = p.rescale_max;
+      }
+
+      // ──────────────────────────────────────────────────────
+      // 체크박스 바인딩
+      // ──────────────────────────────────────────────────────
+      function bindCheckboxes() {
+        const mapping = {
+          "chk-route": "route",
+          "chk-sample": "sample",
+          "chk-cctv": "cctv",
+          "chk-lamp": "lamp",
+          "chk-corridor-cctv": "corridorCctv",
+          "chk-corridor-lamp": "corridorLamp",
+          "chk-gap": "gap",
+        };
+
+        Object.entries(mapping).forEach(([id, key]) => {
+          const el = document.getElementById(id);
+          el.addEventListener("change", () => {
+            setVis(layers[key], el.checked);
+          });
+          // 초기 상태 동기화
+          if (!el.checked) setVis(layers[key], false);
+        });
+      }
+
+      // ── 페이지 로드 ──
+      window.onload = function () {
+        if (typeof kakao === "undefined") {
+          alert(
+            "카카오맵 API 키를 설정해주세요.\nsafety_visualization.html 파일의 YOUR_APP_KEY를 교체하세요.",
+          );
+          document.getElementById("loading").textContent = "API 키 필요!";
+          return;
+        }
+        init();
+      };
+    </script>
+  </body>
+</html>

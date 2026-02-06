@@ -1,0 +1,276 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>강남구 보안등 위치 지도</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        font-family: "Malgun Gothic", sans-serif;
+      }
+      #map {
+        width: 100%;
+        height: 100vh;
+      }
+      #info {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        background: white;
+        padding: 15px;
+        border-radius: 5px;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+        z-index: 1;
+        max-width: 300px;
+      }
+      #loading {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: white;
+        padding: 20px 40px;
+        border-radius: 10px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+        z-index: 2;
+        font-size: 18px;
+      }
+      .hidden {
+        display: none;
+      }
+      #controls {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        background: white;
+        padding: 10px;
+        border-radius: 5px;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+        z-index: 1;
+      }
+      button {
+        padding: 8px 15px;
+        margin: 5px;
+        cursor: pointer;
+        border: none;
+        background: #ff9800;
+        color: white;
+        border-radius: 4px;
+        font-size: 14px;
+      }
+      button:hover {
+        background: #f57c00;
+      }
+      button:disabled {
+        background: #ccc;
+        cursor: not-allowed;
+      }
+      h3 {
+        margin: 0 0 10px 0;
+        color: #333;
+      }
+      p {
+        margin: 5px 0;
+        color: #666;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="loading">지도를 불러오는 중...</div>
+    <div id="info">
+      <h3>🔦 강남구 보안등</h3>
+      <p>전체 보안등: <span id="total">0</span>개</p>
+      <p>표시된 마커: <span id="displayed">0</span>개</p>
+      <p style="font-size: 12px; color: #999; margin-top: 10px">
+        ※ 클러스터를 클릭하면 확대됩니다
+      </p>
+    </div>
+    <div id="controls">
+      <button onclick="toggleMarkers()">마커 토글</button>
+      <button onclick="resetMap()">지도 초기화</button>
+    </div>
+    <div id="map"></div>
+
+    <script
+      type="text/javascript"
+      src="//dapi.kakao.com/v2/maps/sdk.js?appkey=04bd479933893a7050c82bf667702a4b&libraries=clusterer"
+    ></script>
+    <script>
+      let map;
+      let clusterer;
+      let markers = [];
+      let markersVisible = true;
+
+      // 카카오맵 초기화
+      function initMap() {
+        const container = document.getElementById("map");
+        const options = {
+          center: new kakao.maps.LatLng(37.4979, 127.0276), // 강남구 중심
+          level: 6,
+        };
+
+        map = new kakao.maps.Map(container, options);
+
+        // 마커 클러스터러 생성
+        clusterer = new kakao.maps.MarkerClusterer({
+          map: map,
+          averageCenter: true,
+          minLevel: 4,
+          disableClickZoom: false,
+          styles: [
+            {
+              width: "53px",
+              height: "52px",
+              background: "rgba(255, 152, 0, .8)",
+              borderRadius: "25px",
+              color: "#fff",
+              textAlign: "center",
+              fontWeight: "bold",
+              lineHeight: "54px",
+            },
+          ],
+        });
+      }
+
+      // CSV 파일 파싱 함수
+      function parseCSVLine(line) {
+        const result = [];
+        let current = "";
+        let inQuotes = false;
+
+        for (let i = 0; i < line.length; i++) {
+          const char = line[i];
+
+          if (char === '"') {
+            inQuotes = !inQuotes;
+          } else if (char === "," && !inQuotes) {
+            result.push(current.trim());
+            current = "";
+          } else {
+            current += char;
+          }
+        }
+        result.push(current.trim());
+        return result;
+      }
+
+      // CSV 파일 읽기
+      async function loadCSV() {
+        try {
+          const response = await fetch(
+            "서울특별시_강남구_보안등정보_20250103.csv",
+          );
+          const text = await response.text();
+          const lines = text.trim().split("\n");
+
+          // 헤더 제외
+          const dataLines = lines.slice(1);
+          document.getElementById("total").textContent =
+            dataLines.length.toLocaleString();
+
+          // 마커 생성
+          const markerList = [];
+          let count = 0;
+          const uniquePositions = new Set();
+
+          for (const line of dataLines) {
+            const columns = parseCSVLine(line);
+
+            // 위도(4번 인덱스), 경도(5번 인덱스)
+            const latitude = parseFloat(columns[4]);
+            const longitude = parseFloat(columns[5]);
+
+            if (!isNaN(latitude) && !isNaN(longitude)) {
+              const posKey = `${latitude},${longitude}`;
+              uniquePositions.add(posKey);
+
+              const marker = new kakao.maps.Marker({
+                position: new kakao.maps.LatLng(latitude, longitude),
+                image: new kakao.maps.MarkerImage(
+                  "https://t1.daumcdn.net/localimg/localimages/07/mapapidoc/marker_red.png",
+                  new kakao.maps.Size(20, 28),
+                  { offset: new kakao.maps.Point(10, 28) },
+                ),
+              });
+
+              // 마커에 정보창 추가
+              const infowindow = new kakao.maps.InfoWindow({
+                content: `<div style="padding:5px;font-size:12px;width:200px;">
+                                        <strong>${columns[0]}</strong><br>
+                                        ${columns[3]}<br>
+                                        <span style="color:#666;">설치연도: ${columns[6]}, ${columns[7]}</span>
+                                      </div>`,
+              });
+
+              // 마커 클릭 이벤트
+              kakao.maps.event.addListener(marker, "click", function () {
+                infowindow.open(map, marker);
+              });
+
+              markerList.push(marker);
+              count++;
+
+              // 진행 상황 표시 (1000개마다)
+              if (count % 1000 === 0) {
+                document.getElementById("displayed").textContent =
+                  count.toLocaleString();
+              }
+            }
+          }
+
+          markers = markerList;
+          document.getElementById("displayed").textContent =
+            count.toLocaleString();
+
+          // 클러스터러에 마커 추가
+          clusterer.addMarkers(markers);
+
+          // 로딩 메시지 숨김
+          document.getElementById("loading").classList.add("hidden");
+
+          console.log(`총 ${count}개의 보안등 마커가 표시되었습니다.`);
+          console.log(`고유 위치 수: ${uniquePositions.size}개`);
+        } catch (error) {
+          console.error("CSV 파일을 읽는 중 오류 발생:", error);
+          alert(
+            "CSV 파일을 읽는 중 오류가 발생했습니다.\n파일명: 서울특별시_강남구_보안등정보_20250103.csv",
+          );
+          document.getElementById("loading").textContent = "오류 발생!";
+        }
+      }
+
+      // 마커 토글
+      function toggleMarkers() {
+        if (markersVisible) {
+          clusterer.clear();
+          markersVisible = false;
+        } else {
+          clusterer.addMarkers(markers);
+          markersVisible = true;
+        }
+      }
+
+      // 지도 초기화
+      function resetMap() {
+        map.setCenter(new kakao.maps.LatLng(37.4979, 127.0276));
+        map.setLevel(6);
+      }
+
+      // 페이지 로드 시 실행
+      window.onload = function () {
+        // 카카오맵 API 로드 확인
+        if (typeof kakao === "undefined") {
+          alert("카카오맵 API를 불러올 수 없습니다. API 키를 확인해주세요.");
+          document.getElementById("loading").textContent = "API 로드 실패!";
+          return;
+        }
+
+        kakao.maps.load(function () {
+          initMap();
+          loadCSV();
+        });
+      };
+    </script>
+  </body>
+</html>
