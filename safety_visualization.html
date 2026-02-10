@@ -273,65 +273,44 @@
           <div class="step">
             <span class="step-num">3</span
             ><span class="step-label"
-              >회랑 내 인프라 개수로 <b>밀도 점수</b> 계산</span
+              >샘플 포인트가 회랑 내에 있으면
+              <b style="color: #4caf50">커버됨(초록)</b>, 아니면
+              <b style="color: #f44336">미커버(빨강)</b></span
             >
           </div>
           <div class="step">
             <span class="step-num">4</span
             ><span class="step-label"
-              >샘플 포인트 커버 여부로 <b>커버리지 점수</b> 계산</span
+              ><b>안전 점수 = 초록 포인트 / 전체 포인트 × 100</b></span
             >
-          </div>
-          <div class="step">
-            <span class="step-num">5</span
-            ><span class="step-label"
-              >커버 안 되는 최대 구간 → <b>공백 페널티</b></span
-            >
-          </div>
-          <div class="step">
-            <span class="step-num">6</span
-            ><span class="step-label">가중합으로 최종 점수 산출</span>
           </div>
         </div>
 
         <!-- 수식 -->
         <div class="card">
-          <h3>📐 산출 수식</h3>
+          <h3>📐 산출 수식 (단순화)</h3>
           <div class="formula">
-            density = 1 − exp(−count /
-            <span class="blue" id="f-k">k</span>)<br />
+            covered = 초록 샘플 포인트 수<br />
+            total = 전체 샘플 포인트 수<br />
             <br />
-            <span class="highlight">raw</span> =
-            <span class="blue" id="f-wd">w_d</span> × density +
-            <span class="blue" id="f-wc">w_c</span> × coverage −
-            <span class="blue" id="f-wg">w_g</span> × gap_penalty<br />
-            <br />
-            gap_penalty = min(max_gap / <span class="blue" id="f-G">G</span>,
-            1)<br />
-            <br />
-            <span class="highlight">score</span> = clamp(raw /
-            <span class="blue" id="f-rm">rescale</span>, 0, 1) × 100
+            <span class="highlight">안전 점수 = (covered / total) × 100</span>
           </div>
         </div>
 
-        <!-- 세부 점수 -->
+        <!-- 세부 지표 -->
         <div class="card">
           <h3>📈 세부 지표</h3>
           <div class="row">
-            <span class="label">밀도 점수 (density)</span
-            ><span class="value" id="v-density">-</span>
+            <span class="label">커버된 포인트 (초록)</span
+            ><span class="value" id="v-covered">-</span>
           </div>
           <div class="row">
-            <span class="label">커버리지 (coverage)</span
-            ><span class="value" id="v-coverage">-</span>
+            <span class="label">미커버 포인트 (빨강)</span
+            ><span class="value" id="v-uncovered">-</span>
           </div>
           <div class="row">
-            <span class="label">최대 공백 (max_gap)</span
-            ><span class="value" id="v-gap">-</span>
-          </div>
-          <div class="row">
-            <span class="label">공백 페널티</span
-            ><span class="value" id="v-gap-pen">-</span>
+            <span class="label">전체 샘플 포인트</span
+            ><span class="value" id="v-total-points">-</span>
           </div>
           <div
             class="row"
@@ -341,29 +320,25 @@
               margin-top: 6px;
             "
           >
-            <span class="label">raw (가중합)</span
-            ><span class="value" id="v-raw">-</span>
+            <span class="label">커버리지 비율</span
+            ><span class="value" id="v-coverage">-</span>
+          </div>
+          <div class="row">
+            <span class="label">최대 공백 구간</span
+            ><span class="value" id="v-gap">-</span>
           </div>
         </div>
 
-        <!-- 가중치 -->
+        <!-- 인프라 정보 -->
         <div class="card">
-          <h3>⚖️ 가중치 구성</h3>
+          <h3>🏗️ 인프라 정보</h3>
           <div class="row">
-            <span class="label">w_density</span
-            ><span class="value" id="v-wd">-</span>
+            <span class="label">CCTV (회랑 내)</span
+            ><span class="value" id="v-cctv-infra">-</span>
           </div>
           <div class="row">
-            <span class="label">w_coverage</span
-            ><span class="value" id="v-wc">-</span>
-          </div>
-          <div class="row">
-            <span class="label">w_gap</span
-            ><span class="value" id="v-wg">-</span>
-          </div>
-          <div class="row">
-            <span class="label">rescale_max</span
-            ><span class="value" id="v-rm">-</span>
+            <span class="label">보안등 (회랑 내)</span
+            ><span class="value" id="v-lamp-infra">-</span>
           </div>
         </div>
 
@@ -508,40 +483,70 @@
       // 지도에 그리기
       // ──────────────────────────────────────────────────────
       function drawAll() {
-        // 1) CCTV 회랑 (폴리곤)
+        // 1) CCTV 회랑 (도넛 모양 - 경로 주변만)
         if (DATA.debug.corridors && DATA.debug.corridors.cctv) {
           const path = DATA.debug.corridors.cctv.map(
             (c) => new kakao.maps.LatLng(c.lat, c.lng),
           );
+          // 외곽선만 표시 (fill 없음)
           const poly = new kakao.maps.Polygon({
             path: path,
-            strokeWeight: 1,
+            strokeWeight: 2,
             strokeColor: "#ff9800",
-            strokeOpacity: 0.5,
+            strokeOpacity: 0.6,
             strokeStyle: "dash",
             fillColor: "#ff9800",
-            fillOpacity: 0.08,
+            fillOpacity: 0, // 투명하게
           });
           poly.setMap(map);
           layers.corridorCctv.push(poly);
+
+          // 반투명 영역을 위한 polyline (경로를 따라 두껍게)
+          const routePath = DATA.route.map(
+            (c) => new kakao.maps.LatLng(c.lat, c.lng),
+          );
+          const thickLine = new kakao.maps.Polyline({
+            path: routePath,
+            strokeWeight: 100, // 50m * 2 = 100m 너비 (대략)
+            strokeColor: "#ff9800",
+            strokeOpacity: 0.08,
+            strokeStyle: "solid",
+          });
+          thickLine.setMap(map);
+          layers.corridorCctv.push(thickLine);
         }
 
-        // 2) 보안등 회랑
+        // 2) 보안등 회랑 (도넛 모양)
         if (DATA.debug.corridors && DATA.debug.corridors.lamp) {
           const path = DATA.debug.corridors.lamp.map(
             (c) => new kakao.maps.LatLng(c.lat, c.lng),
           );
+          // 외곽선만 표시
           const poly = new kakao.maps.Polygon({
             path: path,
-            strokeWeight: 1,
+            strokeWeight: 2,
             strokeColor: "#fdd835",
             strokeOpacity: 0.6,
             strokeStyle: "dash",
             fillColor: "#fdd835",
-            fillOpacity: 0.1,
+            fillOpacity: 0, // 투명하게
           });
           poly.setMap(map);
           layers.corridorLamp.push(poly);
+
+          // 반투명 영역
+          const routePath = DATA.route.map(
+            (c) => new kakao.maps.LatLng(c.lat, c.lng),
+          );
+          const thickLine = new kakao.maps.Polyline({
+            path: routePath,
+            strokeWeight: 30, // 15m * 2 = 30m 너비 (대략)
+            strokeColor: "#fdd835",
+            strokeOpacity: 0.1,
+            strokeStyle: "solid",
+          });
+          thickLine.setMap(map);
+          layers.corridorLamp.push(thickLine);
         }
 
         // 3) 보안등 마커
@@ -724,36 +729,24 @@
         document.getElementById("v-cctv-r").textContent = p.cctv_radius_m;
         document.getElementById("v-lamp-r").textContent = p.lamp_radius_m;
 
-        // 세부 지표
-        document.getElementById("v-density").textContent =
-          f.density_score.toFixed(4);
+        // 세부 지표 - 단순화
+        const covered = f.covered_points || 0;
+        const total = f.total_points || 0;
+        const uncovered = total - covered;
+
+        document.getElementById("v-covered").textContent = covered + "개";
+        document.getElementById("v-uncovered").textContent = uncovered + "개";
+        document.getElementById("v-total-points").textContent = total + "개";
         document.getElementById("v-coverage").textContent =
           (f.coverage_score * 100).toFixed(1) + "%";
         document.getElementById("v-gap").textContent =
           f.max_gap_m.toFixed(1) + " m";
-        document.getElementById("v-gap-pen").textContent =
-          f.gap_penalty.toFixed(4);
 
-        // raw 계산
-        const raw =
-          p.w_density * f.density_score +
-          p.w_coverage * f.coverage_score -
-          p.w_gap * f.gap_penalty;
-        document.getElementById("v-raw").textContent = raw.toFixed(4);
-
-        // 가중치
-        document.getElementById("v-wd").textContent = p.w_density;
-        document.getElementById("v-wc").textContent = p.w_coverage;
-        document.getElementById("v-wg").textContent = p.w_gap;
-        document.getElementById("v-rm").textContent = p.rescale_max;
-
-        // 수식 값
-        document.getElementById("f-k").textContent = p.density_k_per_km;
-        document.getElementById("f-wd").textContent = p.w_density;
-        document.getElementById("f-wc").textContent = p.w_coverage;
-        document.getElementById("f-wg").textContent = p.w_gap;
-        document.getElementById("f-G").textContent = p.gap_G_m + "m";
-        document.getElementById("f-rm").textContent = p.rescale_max;
+        // 인프라 정보
+        document.getElementById("v-cctv-infra").textContent =
+          f.cctv_count + "대";
+        document.getElementById("v-lamp-infra").textContent =
+          f.lamp_count + "개";
       }
 
       // ──────────────────────────────────────────────────────

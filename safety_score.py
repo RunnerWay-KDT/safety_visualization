@@ -311,21 +311,17 @@ def compute_safety_score(
         for i in range(len(sample_points_m))
     ] if sample_points_m else []
 
+    # 단순 커버리지 계산: 초록/(초록+빨강) * 100
     coverage_score = float(sum(combined_flags) / len(combined_flags)) if combined_flags else 0.0
+    final100 = round(coverage_score * 100.0, 1)
+    
+    # 기존 지표들은 참고용으로 유지
     max_gap_m = _max_gap_m_from_flags(sample_points_m, combined_flags)
     gap_penalty = clamp(max_gap_m / params.gap_G_m, 0.0, 1.0)
 
-    raw = (
-        params.w_density * density_score +
-        params.w_coverage * coverage_score -
-        params.w_gap * gap_penalty
-    )
-    final01 = clamp(raw / params.rescale_max, 0.0, 1.0)
-    final100 = round(final01 * 100.0, 1)
-
     result = {
         "score": final100,
-        "raw01": final01,
+        "raw01": coverage_score,
         "features": {
             "route_len_m": round(route_len_m, 2),
             "lamp_count": lamp_count,
@@ -334,6 +330,8 @@ def compute_safety_score(
             "coverage_score": round(coverage_score, 4),
             "max_gap_m": round(max_gap_m, 2),
             "gap_penalty": round(gap_penalty, 4),
+            "covered_points": sum(combined_flags),
+            "total_points": len(combined_flags),
         },
     }
 
